@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>QR Payment Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: #020617;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      width: 380px;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 20px;
+      margin-bottom: 4px;
+    }
+    .sub {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-bottom: 16px;
+    }
+    label {
+      font-size: 13px;
+      display: block;
+      margin-bottom: 4px;
+    }
+    input {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #1f293b;
+      background: #020617;
+      color: #e5e7eb;
+      margin-bottom: 10px;
+      box-sizing: border-box;
+      font-size: 13px;
+    }
+    input:focus {
+      outline: none;
+      border-color: #22c55e;
+    }
+    .amount-buttons {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .amount-buttons button {
+      flex: 1;
+      padding: 6px 0;
+      border-radius: 999px;
+      border: 1px solid #1e293b;
+      background: #020617;
+      color: #e5e7eb;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .amount-buttons button.active {
+      background: #22c55e;
+      color: #022c22;
+      border-color: #22c55e;
+    }
+    button.pay-btn {
+      width: 100%;
+      padding: 10px 0;
+      border-radius: 999px;
+      border: none;
+      background: #22c55e;
+      color: #022c22;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      margin-top: 4px;
+    }
+    button.pay-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 13px;
+      min-height: 32px;
+    }
+    .status span.badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    .badge-idle { background: #111827; color: #9ca3af; }
+    .badge-running { background: #facc15; color: #1f2937; }
+    .badge-success { background: #22c55e; color: #022c22; }
+    .badge-error { background: #ef4444; color: #fee2e2; }
+    .timer { font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .log {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 8px;
+      max-height: 80px;
+      overflow-y: auto;
+      border-top: 1px dashed #1f2937;
+      padding-top: 6px;
+    }
+    .log div { margin-bottom: 2px; }
+
+    .download-btn {
+      margin-top: 10px;
+      width: 100%;
+      padding: 8px 0;
+      border-radius: 8px;
+      border: none;
+      background: #0284c7;
+      color: #e5e7eb;
+      cursor: pointer;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Pay via Razorpay</h1>
+    <div class="sub">
+      Details bharo, amount select karo, phir “Pay via Razorpay” dabao.
+    </div>
+
+    <label for="name">Name</label>
+    <input id="name" type="text" placeholder="Your name" />
+
+    <label for="email">Email</label>
+    <input id="email" type="email" placeholder="you@example.com" />
+
+    <label for="phone">Phone</label>
+    <input id="phone" type="tel" placeholder="10 digit mobile" />
+
+    <div class="amount-buttons">
+      <button data-amt="5">₹5</button>
+      <button data-amt="10">₹10</button>
+      <button data-amt="20">₹20</button>
+    </div>
+
+    <label for="amount">Custom amount (₹)</label>
+    <input id="amount" type="number" min="1" placeholder="Enter amount" />
+
+    <button class="pay-btn" id="payBtn">Pay via Razorpay</button>
+
+    <button class="download-btn" onclick="window.location.href='/api/payments/export'">
+      Download Excel Report
+    </button>
+
+    <button
+    style="margin-top:8px;width:100%;padding:8px 0;border-radius:8px;background:#0f172a;color:#e5e7eb;border:1px solid #1f2937;font-size:12px;cursor:pointer;"
+    onclick="window.location.href='/admin.html'">
+    Go to Admin Dashboard
+    </button>
+
+
+    <div class="status" id="statusBox">
+      <span class="badge badge-idle" id="statusBadge">IDLE</span>
+      <div class="timer" id="timerText">Timer: --:--</div>
+      <div id="statusMsg">Ready for payment.</div>
+    </div>
+
+    <div class="log" id="logBox"></div>
+  </div>
+
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+  <script>
+    const API_BASE = "http://localhost:5000/api/payments";
+
+    const nameInput = document.getElementById("name");
+    const emailInput = document.getElementById("email");
+    const phoneInput = document.getElementById("phone");
+    const amountInput = document.getElementById("amount");
+    const payBtn = document.getElementById("payBtn");
+    const statusBadge = document.getElementById("statusBadge");
+    const statusMsg = document.getElementById("statusMsg");
+    const timerText = document.getElementById("timerText");
+    const logBox = document.getElementById("logBox");
+    const presetButtons = document.querySelectorAll(".amount-buttons button");
+
+    let countdownInterval = null;
+    let paymentTimeout = null;
+
+    function log(msg) {
+      const line = document.createElement("div");
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logBox.prepend(line);
+    }
+
+    presetButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        presetButtons.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        amountInput.value = btn.dataset.amt;
+      });
+    });
+
+    function setStatus(type, msg) {
+      statusBadge.className = "badge";
+      if (type === "idle") {
+        statusBadge.classList.add("badge-idle");
+        statusBadge.textContent = "IDLE";
+      } else if (type === "running") {
+        statusBadge.classList.add("badge-running");
+        statusBadge.textContent = "PENDING";
+      } else if (type === "success") {
+        statusBadge.classList.add("badge-success");
+        statusBadge.textContent = "SUCCESS";
+      } else if (type === "error") {
+        statusBadge.classList.add("badge-error");
+        statusBadge.textContent = "ERROR";
+      }
+      statusMsg.textContent = msg;
+    }
+
+    function startCountdown(seconds) {
+      clearInterval(countdownInterval);
+      let remaining = seconds;
+      countdownInterval = setInterval(() => {
+        remaining--;
+        const m = String(Math.floor(remaining / 60)).padStart(2, "0");
+        const s = String(remaining % 60).padStart(2, "0");
+        timerText.textContent = `Timer: ${m}:${s}`;
+        if (remaining <= 0) clearInterval(countdownInterval);
+      }, 1000);
+    }
+
+    async function createOrder(amount) {
+      const body = {
+        amount: amount,
+        currency: "INR",
+        receipt: "rcpt_" + Date.now(),
+        customerName: nameInput.value || null,
+        customerEmail: emailInput.value || null,
+        customerContact: phoneInput.value || null
+      };
+      log("Creating order for ₹" + amount);
+      const res = await fetch(API_BASE + "/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error("Order create failed: " + res.status);
+      return res.json();
+    }
+
+    async function verifyPayment(response) {
+      log("Verifying payment on backend");
+      const res = await fetch(API_BASE + "/verify-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          razorpay_order_id: response.razorpay_order_id,
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_signature: response.razorpay_signature
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Verification failed");
+      }
+      return data;
+    }
+
+    payBtn.addEventListener("click", async () => {
+      const amt = parseInt(amountInput.value, 10);
+
+      if (!nameInput.value.trim()) {
+        alert("Please enter your name");
+        return;
+      }
+      if (!amt || amt <= 0) {
+        alert("Please enter a valid amount (>= 1)");
+        return;
+      }
+
+      payBtn.disabled = true;
+      setStatus("running", "Creating order...");
+      log("Starting payment flow");
+
+      try {
+        const orderData = await createOrder(amt);
+        log("Order created: " + orderData.order.id);
+
+        const options = {
+          key: orderData.key_id,
+          amount: orderData.order.amount,
+          currency: orderData.order.currency,
+          name: "Demo Store",
+          description: "Payment Demo",
+          order_id: orderData.order.id,
+          prefill: {
+            name: nameInput.value,
+            email: emailInput.value,
+            contact: phoneInput.value
+          },
+          handler: async function (response) {
+            clearTimeout(paymentTimeout);
+            clearInterval(countdownInterval);
+            setStatus("running", "Payment completed, verifying...");
+            log("Payment completed, verifying...");
+
+            try {
+              await verifyPayment(response);
+              setStatus(
+                "success",
+                "Payment verified! Payment ID: " + response.razorpay_payment_id
+              );
+              log("Backend verification success");
+            } catch (err) {
+              setStatus("error", "Verification error: " + err.message);
+              log("Verification error: " + err.message);
+            } finally {
+              payBtn.disabled = false;
+            }
+          },
+          modal: {
+            ondismiss: function () {
+              clearTimeout(paymentTimeout);
+              clearInterval(countdownInterval);
+              setStatus("idle", "Payment popup closed.");
+              log("User closed Razorpay popup");
+              payBtn.disabled = false;
+            }
+          },
+          theme: { color: "#22c55e" }
+        };
+
+        const rzp = new Razorpay(options);
+
+        startCountdown(180);
+        paymentTimeout = setTimeout(() => {
+          rzp.close();
+          setStatus("error", "Checkout expired (3 min over). Please try again.");
+          log("Payment timeout reached, closing checkout");
+          payBtn.disabled = false;
+        }, 180000);
+
+        setStatus("running", "Checkout opened. Complete payment within 3 minutes.");
+        rzp.open();
+      } catch (err) {
+        console.error(err);
+        setStatus("error", err.message);
+        log("Error: " + err.message);
+        payBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
